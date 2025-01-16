@@ -4,7 +4,7 @@
 
 Generate engaging social media content with AI for multiple platforms. Create viral posts for Instagram, Facebook, Twitter, LinkedIn, and more.
 
-## 🌟 Features
+## 🌟 Features 
 
 - 🚀 Multi-platform content generation
 - 🌍 25+ language support
