@@ -919,12 +919,23 @@
   <div id="result-section" class="mt-8 p-6 bg-gray-50 rounded-xl">
       <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold">Generated Content</h3>
-          <button onclick="copyContent()" class="text-purple-600 hover:text-purple-700">
+          <div class="flex items-center space-x-2">
+            <button onclick="toggleHistory()" class="text-purple-600 hover:text-purple-700 mr-2">
+              <i class="fas fa-history"></i>
+            </button>
+            <button onclick="copyContent()" class="text-purple-600 hover:text-purple-700">
               <i class="fa-regular fa-copy"></i>
-          </button>
+            </button>
+          </div>
       </div>
       <div id="result-content" class="bg-white p-4 rounded-lg border border-gray-200 min-h-[200px]">
           <p class="text-gray-600">Your generated content will appear here...</p>
+      </div>
+      <div id="history-section" class="hidden mt-4">
+          <h4 class="text-md font-semibold mb-2">History</h4>
+          <div id="history-list" class="space-y-2 max-h-[200px] overflow-y-auto">
+            <!-- History items will be added here -->
+          </div>
       </div>
   </div>
 </div>
@@ -989,10 +1000,31 @@
           document.getElementById('language').value = appState.inputs.language || 'en';
           document.getElementById('platform').value = appState.inputs.platform || 'Instagram';
           document.getElementById('contentLength').value = appState.inputs.contentLength || 500;
-          return true; // Return true if state was loaded from URL
+
+          // Update platform icon and active state
+          const platform = appState.inputs.platform || 'Instagram';
+          updatePlatformIcon(platform);
+          selectPlatform(platform);
         }
+        
+        // Show generated content if exists
+        if (appState.response && appState.response.content) {
+          const resultContent = document.getElementById('result-content');
+          const formattedContent = appState.response.content
+            .replace(/\*\*(.*?)\*\*/g, '<span class="font-bold text-lg text-purple-700">$1</span>')
+            .replace(/\n/g, '<br>');
+          resultContent.innerHTML = `<p class="whitespace-pre-wrap leading-relaxed">${formattedContent}</p>`;
+          
+          // Add to history if not exists
+          const existingItem = contentHistory.find(item => item.hash === hash);
+          if (!existingItem) {
+            addToHistory(appState.response.content, hash);
+          }
+        }
+        
+        return true;
       }
-      return false; // Return false if no state in URL
+      return false;
     } catch (error) {
       console.error('Error loading state from URL:', error);
       return false;
@@ -1087,9 +1119,17 @@
               .replace(/\n/g, '<br>');
             
             resultContent.innerHTML = `<p class="whitespace-pre-wrap leading-relaxed">${formattedContent}</p>`;
+            
             // Update state with response
             appState.response.content = result.content;
             appState.response.error = null;
+            
+            // Update URL and add to history
+            updateURL();
+            const hash = window.location.hash.slice(1);
+            if (hash) {
+              addToHistory(result.content, hash);
+            }
           } else {
             resultContent.innerHTML = `<p class="text-red-500">Error: Unable to generate content</p>`;
             appState.response.error = 'Unable to generate content';
@@ -1102,7 +1142,6 @@
         } finally {
           button.disabled = false;
           loader.classList.add('hidden');
-          updateURL(); // Update URL after response
         }
       }
     });
@@ -1160,7 +1199,8 @@
     
     // Update active state of buttons
     document.querySelectorAll('.platform-btn').forEach(btn => {
-      if (btn.querySelector('span').textContent === platform) {
+      const btnPlatform = btn.querySelector('span').textContent;
+      if (btnPlatform === platform) {
         btn.classList.add('border-purple-500', 'bg-purple-50');
       } else {
         btn.classList.remove('border-purple-500', 'bg-purple-50');
@@ -1171,7 +1211,8 @@
   // Function to update platform icon
   function updatePlatformIcon(platform) {
     const iconContainer = document.getElementById('platformIcon');
-    iconContainer.innerHTML = `<i class="${platformIcons[platform]}"></i>`;
+    const iconClass = platformIcons[platform] || platformIcons['Website']; // Fallback to Website icon
+    iconContainer.innerHTML = `<i class="${iconClass}"></i>`;
   }
 
   // Add platform change listener
@@ -1181,6 +1222,92 @@
     selectPlatform(e.target.value);
   });
 
+  // History management
+  const MAX_HISTORY_ITEMS = 10;
+  let contentHistory = [];
+
+  // Load history from localStorage
+  function loadHistory() {
+    try {
+      const savedHistory = localStorage.getItem('contentHistory');
+      if (savedHistory) {
+        contentHistory = JSON.parse(savedHistory);
+        updateHistoryUI();
+      }
+    } catch (error) {
+      console.error('Error loading history:', error);
+    }
+  }
+
+  // Save history to localStorage
+  function saveHistory() {
+    try {
+      localStorage.setItem('contentHistory', JSON.stringify(contentHistory));
+    } catch (error) {
+      console.error('Error saving history:', error);
+    }
+  }
+
+  // Add item to history
+  function addToHistory(content, hash) {
+    const timestamp = new Date().toLocaleString();
+    contentHistory.unshift({ content, hash, timestamp });
+    
+    // Keep only the last MAX_HISTORY_ITEMS items
+    if (contentHistory.length > MAX_HISTORY_ITEMS) {
+      contentHistory = contentHistory.slice(0, MAX_HISTORY_ITEMS);
+    }
+    
+    saveHistory();
+    updateHistoryUI();
+  }
+
+  // Update history UI
+  function updateHistoryUI() {
+    const historyList = document.getElementById('history-list');
+    historyList.innerHTML = contentHistory.map((item, index) => `
+      <div class="bg-white p-3 rounded-lg border border-gray-200 hover:border-purple-500 transition-colors">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-sm text-gray-500">${item.timestamp}</span>
+          <div class="flex items-center space-x-2">
+            <button onclick="copyHistoryHash('${item.hash}')" class="text-purple-600 hover:text-purple-700">
+              <i class="fas fa-link text-sm"></i>
+            </button>
+            <button onclick="loadHistoryItem('${item.hash}')" class="text-purple-600 hover:text-purple-700">
+              <i class="fas fa-arrow-rotate-left text-sm"></i>
+            </button>
+          </div>
+        </div>
+        <p class="text-sm text-gray-700 truncate">${item.content}</p>
+      </div>
+    `).join('');
+  }
+
+  // Toggle history section
+  function toggleHistory() {
+    const historySection = document.getElementById('history-section');
+    historySection.classList.toggle('hidden');
+  }
+
+  // Copy history hash to clipboard
+  function copyHistoryHash(hash) {
+    const url = window.location.origin + window.location.pathname + '#' + hash;
+    navigator.clipboard.writeText(url).then(() => {
+      // Show temporary success message
+      const tooltip = document.createElement('div');
+      tooltip.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg';
+      tooltip.textContent = 'URL copied to clipboard!';
+      document.body.appendChild(tooltip);
+      setTimeout(() => tooltip.remove(), 2000);
+    });
+  }
+
+  // Load history item
+  function loadHistoryItem(hash) {
+    window.location.hash = hash;
+    location.reload();
+  }
+
   // Initialize
   document.addEventListener('DOMContentLoaded', () => {
     const stateLoaded = loadStateFromURL(); // First load state from URL if exists
@@ -1188,6 +1315,12 @@
       setInitialLanguage(); // Only set language if no state was loaded or if loaded language is not Turkish
     }
     setupInputListeners(); // Setup input listeners
+    loadHistory(); // Load history on page load
+
+    // Set initial platform icon and active state
+    const currentPlatform = document.getElementById('platform').value;
+    updatePlatformIcon(currentPlatform);
+    selectPlatform(currentPlatform);
   });
 
   // Make container responsive
